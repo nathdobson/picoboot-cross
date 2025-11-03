@@ -16,14 +16,15 @@ name = "picoboot"
 path = "src/lib.rs"
 
 [features]
-default = ["tokio"]
+default = ["tokio", "logging"]
 tokio = ["nusb/tokio"]
 smol = ["nusb/smol"]
+logging = ["deku/logging"]
 
 [dependencies]
-deku = { version = "0.20", features = ["logging"]}
+deku = "0.20"
 log = "0.4"
-nusb = { git = "https://github.com/piersfinlayson/nusb.git", branch = "main" }
+nusb = "0.2"
 rustix = "1.1"
 serde = { version = "1.0", features = ["serde_derive"] }
 thiserror = "2"

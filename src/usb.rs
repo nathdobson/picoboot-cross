@@ -40,7 +40,10 @@ const DEFAULT_COMMAND_STATUS_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_RESET_TIMEOUT: Duration = Duration::from_secs(1);
 
 
+/// USB timeouts for PICOBOOT operations
 /// 
+/// Note that on Windows, the current version of `nusb` does not honour these
+/// timeouts, and instead uses the default WinUSB timeout of 5s.
 #[derive(Debug, Clone)]
 pub struct Timeouts {
     /// Endpoint timeout duration

@@ -79,9 +79,10 @@
 //! Used to indicate the desired async runtime for `nusb`.
 //! 
 //! ```toml
-//! default = ["tokio"]
+//! default = ["tokio", "logging"]
 //! tokio = ["nusb/tokio"]
 //! smol = ["nusb/smol"]
+//! logging = ["deku/logging"]
 //! ```
 //! 
 //! ## Acknowledgement

@@ -9,7 +9,7 @@ use nusb::transfer::{
     Bulk, Buffer, ControlIn, ControlOut, Direction as NusbDirection, In, Out,
     Recipient,
 };
-use nusb::transfer::ControlType::Class;
+use nusb::transfer::ControlType::Vendor;
 #[cfg(target_os = "linux")]
 use nusb::ErrorKind as NusbErrorKind;
 #[allow(unused_imports)]
@@ -44,7 +44,7 @@ const DEFAULT_RESET_TIMEOUT: Duration = Duration::from_secs(1);
 /// 
 /// Note that on Windows, the current version of `nusb` does not honour these
 /// timeouts, and instead uses the default WinUSB timeout of 5s.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Timeouts {
     /// Endpoint timeout duration
     pub endpoint: Duration,
@@ -114,11 +114,15 @@ impl Connection {
     ///
     /// This may be called after opening a brand new connection to ensure a
     /// consistent starting state, or to reset a stalled connection.
+    /// 
+    /// Note that this resets any exclusive access, re-enabling the USB mass
+    /// storage device if it was ejects due to exclusivity.
     ///
     /// Returns:
     /// - `Ok(())` - If interface is successfully reset.
     pub async fn reset_interface(&mut self) -> Result<()> {
         // Get the IN endpoint
+        trace!("Getting bulk IN endpoint");
         let mut in_ep: Endpoint<Bulk, In> = self.interface.endpoint(self.in_ep)
             .inspect_err(|e| debug!("Failed to get bulk IN endpoint: {e}"))
             .map_err(|e| PicobootError::UsbInEndpointClaimFailure(self.target.clone(), e))?;
@@ -127,6 +131,7 @@ impl Connection {
             .map_err(|e| PicobootError::UsbClearInEndpointHaltFailure(self.target.clone(), e))?;
 
         // Get the OUT endpoint
+        trace!("Getting bulk OUT endpoint");
         let mut out_ep: Endpoint<Bulk, Out> = self.interface.endpoint(self.out_ep)
             .inspect_err(|e| debug!("Failed to get bulk OUT endpoint: {e}"))
             .map_err(|e| PicobootError::UsbOutEndpointClaimFailure(self.target.clone(), e))?;
@@ -134,10 +139,27 @@ impl Connection {
             .inspect_err(|e| debug!("Failed to clear halt on bulk OUT endpoint: {e}"))
             .map_err(|e| PicobootError::UsbClearOutEndpointHaltFailure(self.target.clone(), e))?;
 
+        // Get command status
+        trace!("Getting command status before reset");
+        match self.get_command_status().await {
+            Ok(status) => {
+                if status.is_ok() {
+                    trace!("Device status OK - not sending reset control request");
+                    return Ok(())
+                } else {
+                    debug!("Device status not OK - sending reset control request");
+                }
+            },
+            Err(e) => {
+                info!("Failed to get device status before reset - sending reset control request: {e}");
+            }
+        }
+
         // Send reset control request
+        trace!("Sending reset control request");
         let timeout = self.timeouts.reset;
         let control_out = ControlOut {
-            control_type: Class,
+            control_type: Vendor,
             recipient: Recipient::Interface,
             request: REQUEST_RESET,
             value: 0,
@@ -179,9 +201,6 @@ impl Connection {
 
         // Write the command
         self.bulk_write(cmd_bytes.as_slice(), true)?;
-        
-        // TO DO remove
-        //let _stat = self.get_command_status().await?;
 
         // Do the appropriate read/write if this is a data transfer command
         let mut res = vec![];
@@ -202,9 +221,6 @@ impl Connection {
                     let _written = self.bulk_write(buf, true)?;
                 }
             }
-
-            // TO DO remove
-            //let _stat = self.get_command_status().await?;
         }
 
         // Handle acknowledgement
@@ -588,14 +604,17 @@ impl Connection {
         let timeout = std::time::Duration::from_secs(1);
 
         // Build control request
+        let if_num = self.interface.interface_number() as u16;
         let control = ControlIn {
-            control_type: Class,
+            control_type: Vendor,
             recipient: Recipient::Interface,
             request: REQUEST_GET_COMMAND_STATUS,
             value: 0,
-            index: self.interface.interface_number() as u16,
+            index: if_num,
             length: RESPONSE_GET_COMMAND_STATUS_SIZE as u16,
         };
+
+        trace!("Issuing GET_COMMAND_STATUS control for interface {if_num}");
 
         // Send control request
         let buf = {
@@ -671,6 +690,28 @@ pub struct Picoboot {
     // Endpoint timeout duration
     timeouts: Timeouts,
 }
+
+/// Two `Picoboot` instances are equal if they refer to the same USB device
+/// connection with the same VID/PID, same serial number and same timeout
+/// configuration.
+///
+/// This ignores:
+/// - Connection state (open/closed)
+/// - Derived configuration (endpoints, packet sizes)
+/// - Timeout settings
+impl PartialEq for Picoboot {
+    fn eq(&self, other: &Self) -> bool {
+        self.target == other.target &&
+        self.device_info.vendor_id() == other.device_info.vendor_id() &&
+        self.device_info.product_id() == other.device_info.product_id() &&
+        self.device_info.bus_id() == other.device_info.bus_id() &&
+        self.device_info.device_address() == other.device_info.device_address() &&
+        self.device_info.serial_number() == other.device_info.serial_number() &&
+        self.timeouts == other.timeouts
+    }
+}
+
+impl Eq for Picoboot {}
 
 impl Picoboot {
     /// Creates a new PICOBOOT object from the specified `nusb` device info.
@@ -868,7 +909,7 @@ impl Picoboot {
     }
 
     /// Returns whether the PICOBOOT device is currently connected
-    pub fn is_connected(&mut self) -> bool {
+    pub fn is_connected(&self) -> bool {
         self.connection.is_some()
     }
 
@@ -878,7 +919,212 @@ impl Picoboot {
     }
 
     /// Returns the target type of the connected PICOBOOT device
-    pub fn target(&mut self) -> &Target {
+    pub fn target(&self) -> &Target {
         &self.target
+    }
+
+    /// Returns VID/PID of the connected PICOBOOT device
+    pub fn info(&self) -> String {
+        format!("{:04X}:{:04X}", self.device_info.vendor_id(), self.device_info.product_id())
+    }
+
+    /// Convience function to avoid the need to explicitly connect before
+    /// performing a flash read.
+    /// 
+    /// Useful when performing a single operation.
+    ///
+    /// Args:
+    /// - `addr` - Address to start the read.
+    /// - `size` - Number of bytes to read.
+    /// 
+    /// Returns:
+    /// - `Ok(Vec<u8>)` - Buffer of data read from flash.
+    pub async fn flash_read(&mut self, addr: u32, size: u32) -> Result<Vec<u8>> {
+        let was_connected = self.is_connected();
+        if !was_connected {
+            self.connect().await?;
+        }
+
+        trace!("Connected to PICOBOOT device for flash read");
+        let conn = self.connection.as_mut().unwrap();
+
+        trace!("Reset PICOBOOT interface");
+        match conn.reset_interface().await {
+            Ok(()) => {}
+            Err(e) => {
+                if !was_connected {
+                    self.disconnect();
+                }
+                return Err(e);
+            }
+        }
+
+        trace!("Reading flash memory");
+        match conn.flash_read(addr, size).await {
+            Ok(data) => Ok(data),
+            Err(e) => {
+                if !was_connected {
+                    self.disconnect();
+                }
+                Err(e)
+            }
+        }
+    }
+
+    /// Convience function to avoid the need to explicitly connect before
+    /// performing a flash write.
+    /// 
+    /// Useful when performing a single operation.
+    ///
+    /// Args:
+    /// - `addr` - Address to start the write. Must be on a multiple of
+    ///   [`Target::flash_page_size`].
+    /// - `buf` - Buffer of data to write to flash. Should be a multiple of
+    ///   [`Target::flash_page_size`]. If not, the remainder of the final
+    /// page is zero-filled.
+    /// 
+    /// Returns:
+    /// - `Ok(())` - If write command is successfully sent.
+    pub async fn flash_write(&mut self, addr: u32, buf: &[u8]) -> Result<()> {
+        let was_connected = self.is_connected();
+        if !was_connected {
+            self.connect().await?;
+        }
+
+        trace!("Connected to PICOBOOT device for flash write");
+        let conn = self.connection.as_mut().unwrap();
+
+        trace!("Reset PICOBOOT interface");
+        match conn.reset_interface().await {
+            Ok(()) => {}
+            Err(e) => {
+                if !was_connected {
+                    self.disconnect();
+                }
+                return Err(e);
+            }
+        }
+
+        trace!("Writing flash memory");
+        match conn.flash_write(addr, buf).await {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                if !was_connected {
+                    self.disconnect();
+                }
+                Err(e)
+            }
+        }
+    }
+
+    /// Convience function to avoid the need to explicitly connect before
+    /// performing a flash erase.
+    /// 
+    /// Useful when performing a single operation.
+    /// 
+    /// Args:
+    /// - `addr` - Address to start the erase. Must be on a multiple of
+    ///   [`Target::flash_sector_size`].
+    /// - `size` - Number of bytes to erase. Must be a multiple of
+    ///   [`Target::flash_sector_size`].
+    /// 
+    /// Returns:
+    /// - `Ok(())` - If erase command is successfully sent.
+    pub async fn flash_erase(&mut self, addr: u32, size: u32) -> Result<()> {
+        let was_connected = self.is_connected();
+        if !was_connected {
+            self.connect().await?;
+        }
+
+        trace!("Connected to PICOBOOT device for flash erase");
+        let conn = self.connection.as_mut().unwrap();
+
+        trace!("Reset PICOBOOT interface");
+        match conn.reset_interface().await {
+            Ok(()) => {}
+            Err(e) => {
+                if !was_connected {
+                    self.disconnect();
+                }
+                return Err(e);
+            }
+        }
+
+        trace!("Erasing flash memory");
+        match conn.flash_erase(addr, size).await {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                if !was_connected {
+                    self.disconnect();
+                }
+                Err(e)
+            }
+        }
+    }
+
+    /// Convience function to perform a combined flash erase and write, and to
+    /// avoid the need to explicitly connect before performing the operation.
+    /// 
+    /// Useful when performing a single operation.
+    /// 
+    /// Args:
+    /// - `addr` - Address to start the erase and write. Must be on a multiple of
+    ///   [`Target::flash_sector_size`] and [`Target::flash_page_size`].
+    /// - `buf` - Buffer of data to write to flash. Should be a multiple of
+    ///   [`Target::flash_page_size`]. If not, the remainder of the final
+    ///   page is zero-filled.
+    /// 
+    /// Returns:
+    /// - `Ok(())` - If erase and write commands are successfully sent.
+    pub async fn flash_erase_and_write(&mut self, addr: u32, buf: &[u8]) -> Result<()> {
+        if !addr.is_multiple_of(self.target.flash_sector_size()) || !addr.is_multiple_of(self.target.flash_page_size()) {
+            return Err(Error::PicobootEraseInvalidAddr(self.target.clone(), addr));
+        }
+
+        // Round up flash erase size
+        let flash_erase_size = u32::try_from(buf.len())
+            .map_err(|_| Error::PicobootEraseInvalidSize(self.target.clone(), buf.len() as u32))?;
+        let sector_size = self.target.flash_sector_size();
+        let flash_erase_size = flash_erase_size.div_ceil(sector_size) * sector_size;
+
+        let was_connected = self.is_connected();
+        if !was_connected {
+            self.connect().await?;
+        }
+
+        trace!("Connected to PICOBOOT device for flash erase and write");
+        let conn = self.connection.as_mut().unwrap();
+
+        trace!("Reset PICOBOOT interface");
+        match conn.reset_interface().await {
+            Ok(()) => {}
+            Err(e) => {
+                if !was_connected {
+                    self.disconnect();
+                }
+                return Err(e);
+            }
+        }
+
+        trace!("Erasing flash memory");
+        match conn.flash_erase(addr, flash_erase_size).await {
+            Ok(()) => {}
+            Err(e) => {
+                if !was_connected {
+                    self.disconnect();
+                }
+                return Err(e);
+            }
+        }
+
+        match conn.flash_write(addr, buf).await {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                if !was_connected {
+                    self.disconnect();
+                }
+                Err(e)
+            }
+        }
     }
 }

@@ -155,6 +155,12 @@ impl TryFrom<u32> for PicobootStatus {
     }
 }
 
+impl PicobootStatus {
+    pub fn is_ok(&self) -> bool {
+        matches!(self, PicobootStatus::Ok)
+    }
+}
+
 #[derive(DekuRead, DekuWrite, Debug, Clone)]
 #[deku(endian = "little")]
 struct PicobootRangeCmd {
@@ -252,6 +258,10 @@ impl PicobootStatusCmd {
 
     pub fn get_in_progress(&self) -> u8 {
         self.in_progress
+    }
+
+    pub fn is_ok(&self) -> bool {
+        self.get_status_code().is_ok()
     }
 }
 

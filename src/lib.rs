@@ -220,7 +220,7 @@ impl Target {
     }
 
     /// Returns the USB Vendor ID for this target
-    pub(crate) fn vid(&self) -> u16 {
+    pub fn vid(&self) -> u16 {
         match self {
             Target::Rp2040 => PICOBOOT_VID,
             Target::Rp2350 => PICOBOOT_VID,

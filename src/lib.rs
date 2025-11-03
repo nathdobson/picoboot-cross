@@ -32,7 +32,7 @@
 //!     conn.set_exclusive_access(Access::ExclusiveAndEject).await?;
 //!     conn.exit_xip().await?;
 //! 
-//!     // Erase first 4096 of flash (1 sector)
+//!     // Erase first 4096 bytes of flash (1 sector)
 //!     conn.flash_erase_start(4096).await?;
 //! 
 //!     // Write 256 bytes of data to start of flash (1 page)

@@ -41,14 +41,35 @@ pub enum PicobootCmdId {
     /// internally by the Mass Storage and PICOBOOT interfaces be copied into
     /// RAM - only supported on RP2040
     VectorizeFlash = 0x9,
+    /// Write to OTP - only supported on RP2350
+    OtpWrite = 0xD,
     /// Get device information - only supported on RP2350
     GetInfo = 0x8B,
     /// Read from OTP - only supported on RP2350
     OtpRead = 0x8C,
-    /// Write to OTP - only supported on RP2350
-    OtpWrite = 0xD,
     /// Read from RAM or FLASH
     Read = 0x84,
+}
+
+impl std::fmt::Display for PicobootCmdId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            PicobootCmdId::ExclusiveAccess => "EXCLUSIVE_ACCESS",
+            PicobootCmdId::Reboot => "REBOOT",
+            PicobootCmdId::Reboot2 => "REBOOT2",
+            PicobootCmdId::FlashErase => "FLASH_ERASE",
+            PicobootCmdId::Write => "WRITE",
+            PicobootCmdId::ExitXip => "EXIT_XIP",
+            PicobootCmdId::EnterXip => "ENTER_XIP",
+            PicobootCmdId::Exec => "EXEC",
+            PicobootCmdId::VectorizeFlash => "VECTORIZE_FLASH",
+            PicobootCmdId::GetInfo => "GET_INFO",
+            PicobootCmdId::OtpRead => "OTP_READ",
+            PicobootCmdId::OtpWrite => "OTP_WRITE",
+            PicobootCmdId::Read => "READ",
+        };
+        write!(f, "{}", name)
+    }
 }
 
 impl TryFrom<u8> for PicobootCmdId {
@@ -280,12 +301,12 @@ impl PicobootCmd {
         self.transfer_len as usize
     }
 
-    pub fn get_cmd_id(&self) -> PicobootCmdId {
+    pub fn id(&self) -> PicobootCmdId {
         self.cmd_id.try_into().unwrap()
     }
 
     pub fn direction(&self) -> Direction {
-        self.get_cmd_id().direction()
+        self.id().direction()
     }
 
     pub fn is_data_transfer(&self) -> bool {

@@ -15,7 +15,7 @@ const REBOOT_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
 
 #[tokio::main]
 async fn main() {
-    env_logger::init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     // Get a single argument - the binary file to flash
     let args: Vec<String> = std::env::args().collect();
@@ -42,11 +42,12 @@ async fn run(firmware_path: &Path) -> Result<(), Error> {
     // Create Picoboot object - this will find the first connected device with
     // an RP2040 or RP2350 stock VID/PID in BOOTSEL mode
     println!("Discovering device...");
-    let mut picoboot = Picoboot::new(None).await?;
+    let mut picoboot = Picoboot::from_first(None).await?;
 
     // Connect to the device
     println!("Connecting to device...");
     let conn = picoboot.connect().await?;
+    println!("Connected to: {}", conn.target());
 
     // Reset the interface
     //println!("Resetting interface...");

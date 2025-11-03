@@ -18,7 +18,7 @@ use picoboot::{Picoboot, Access, Error};
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     // Create connection to first RP2040/RP2350 found
-    let mut picoboot = Picoboot::new(None).await?;
+    let mut picoboot = Picoboot::from_first(None).await?;
     let conn = picoboot.connect().await?;
 
     // Claim exclusive access, ejecting the BOOTSEL mass storage device and

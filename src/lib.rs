@@ -24,7 +24,7 @@
 //! #[tokio::main]
 //! async fn main() -> Result<(), Error> {
 //!     // Create connection to first RP2040/RP2350 found
-//!     let mut picoboot = Picoboot::new(None).await?;
+//!     let mut picoboot = Picoboot::from_first(None).await?;
 //!     let conn = picoboot.connect().await?;
 //!
 //!     // Claim exclusive access, ejecting the BOOTSEL mass storage device and
@@ -187,6 +187,28 @@ pub enum Target {
     }
 }
 
+impl std::fmt::Display for Target {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Target::Rp2040 => write!(f, "RP2040"),
+            Target::Rp2350 => write!(f, "RP2350"),
+            Target::Custom { vid, pid } => {
+                write!(f, "{:04x}:{:04x}", vid, pid)
+            }
+        }
+    }
+}
+
+impl From<&nusb::DeviceInfo> for Target {
+    fn from(dev_info: &nusb::DeviceInfo) -> Self {
+        match (dev_info.vendor_id(), dev_info.product_id()) {
+            (PICOBOOT_VID, PICOBOOT_PID_RP2040) => Target::Rp2040,
+            (PICOBOOT_VID, PICOBOOT_PID_RP2350) => Target::Rp2350,
+            (vid, pid) => Target::Custom { vid, pid },
+        }
+    }
+}
+
 impl Target {
     /// Returns the USB Product ID for this target
     pub fn pid(&self) -> u16 {
@@ -273,105 +295,123 @@ pub enum Direction {
     Out,
 }
 
-/// Error type for this crate.
+/// `picoboot` error type.
+/// 
+/// Errors are broken down into:
+/// - USB errors - originating from the underlying `nusb` crate
+/// - PICOBOOT errors - originating from PICOBOOT device or protocol handling
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    /// USB stack error
-    #[error("usb stack error: {0}")]
-    NusbError(nusb::Error),
-    /// USB device not found.
-    #[error("usb device not found")]
-    UsbDeviceNotFound,
-    /// PICBOOT interface not found
-    #[error("picoboot interface not found")]
-    PicobootInterfaceNotFound,
-    /// USB device found, but failed to open.
-    #[error("usb device found but can't open: {0}")]
-    UsbDeviceFailedToOpen(nusb::Error),
-    /// Failed to get active USB configuration.
-    #[error("failed to get active usb configuration: {0}")]
-    UsbGetActiveConfigurationFailure(nusb::ActiveConfigurationError),
-    /// Failed to get the descriptor for the active USB configuration.
-    #[error("no descriptor found for active usb configuration")]
-    UsbNoActiveInterfaceDescriptor,
-    /// Failed to claim endpoint
-    #[error("failed to claim usb bulk endpoint: {0}")]
-    UsbEndpointClaimFailure(nusb::Error),
-    /// Failed to get USB bulk endpoints.
-    #[error("failed to get usb bulk endpoints")]
-    UsbEndpointsNotFound,
-    /// USB bulk endpoints returned unexpected results.
-    #[error("usb bulk endpoints are not expected")]
-    UsbEndpointsUnexpected,
-    /// Failed to detach USB kernel driver.
-    #[error("failed to detach usb kernel driver: {0}")]
-    UsbDetachKernelDriverFailure(nusb::Error),
-    /// Failed to re-attach USB kernel driver.
-    #[error("failed to re-attach usb kernel driver: {0}")]
-    UsbReattachKernelDriverFailure(nusb::Error),
-    /// Command failed as PICOBOOT is not connected
-    #[error("picoboot not connected")]
-    UsbNotConnected,
+    /// Hit error enumerating USB devices
+    #[error("Error enumerating USB devices: {0}")]
+    UsbEnumerationError(nusb::Error),
+
+    /// Failed to open USB device.
+    #[error("Failed to open target {0}: {1}")]
+    UsbOpenError(Target, nusb::Error),
+
     /// Failed to claim USB interface.
-    #[error("failed to claim usb interface: {0}")]
-    UsbClaimInterfaceFailure(nusb::Error),
-    /// Failed to configure alt USB setting.
-    #[error("failed to set alt usb setting: {0}")]
-    UsbSetAltSettingFailure(nusb::Error),
-    /// Failed to read from USB bulk endpoint.
-    #[error("failed to read bulk: {0}")]
-    UsbReadBulkFailure(nusb::transfer::TransferError),
-    /// Read data from USB does not match expected size.
-    #[error("read did not match expected size")]
-    UsbReadBulkMismatch,
-    /// Failed to write to USB bulk endpoint.
-    #[error("failed to write bulk: {0}")]
-    UsbWriteBulkFailure(nusb::transfer::TransferError),
-    /// Written data to USB does not match expected size.
-    #[error("write did not match expected size")]
-    UsbWriteBulkMismatch,
+    #[error("Failed to claim USB interface on {0}: {1}")]
+    UsbClaimInterfaceFailure(Target, nusb::Error),
 
-    /// Failed to clear USB in address halt.
-    #[error("failed to clear in addr halt: {0}")]
-    UsbClearInAddrHalt(nusb::Error),
+    /// Failed to get the descriptor for the active USB configuration.
+    #[error("Failed to get descriptor for active usb configuration on {0}")]
+    UsbNoActiveInterfaceDescriptor(Target),
+
+    /// Failed to get USB bulk endpoints.
+    #[error("Failed to find USB bulk endpoints on {0}")]
+    UsbEndpointsNotFound(Target),
+
+    /// Failed to claim endpoint
+    #[error("Failed to claim USB bulk IN endpoint on {0}: {1}")]
+    UsbInEndpointClaimFailure(Target, nusb::Error),
+
+    /// Failed to claim USB bulk OUT endpoint.
+    #[error("Failed to claim USB bulk OUT endpoint on {0}: {1}")]
+    UsbOutEndpointClaimFailure(Target, nusb::Error),
+
+    /// Failed to clear USB IN address halt.
+    #[error("Failed to clear IN endoint halt on {0}: {1}")]
+    UsbClearInEndpointHaltFailure(Target, nusb::Error),
+
     /// Failed to clear USB out address halt.
-    #[error("failed to clear out addr halt: {0}")]
-    UsbClearOutAddrHalt(nusb::Error),
-    /// Failed to reset USB interface.
-    #[error("failed to reset interface: {0}")]
-    UsbResetInterfaceFailure(nusb::transfer::TransferError),
+    #[error("Failed to clear OUT endpoint halt on {0}: {1}")]
+    UsbClearOutEndpointHaltFailure(Target, nusb::Error),
 
-    /// Failed to get command status from device.
-    #[error("failed to get command status: {0}")]
-    UsbGetCommandStatusFailure(nusb::transfer::TransferError),
+    /// Failed to detach USB kernel driver (linux only).
+    #[cfg(target_os = "linux")]
+    #[error("Failed to detach USB kernel driver for {0}: {1}")]
+    UsbDetachKernelDriverFailure(Target, nusb::Error),
 
-    /// Failed to serialize command for device.
-    #[error("cmd failed to binary encode: {0}")]
-    CmdSerializeFailure(deku::DekuError),
-    /// Failed to deserialize command from device.
-    #[error("cmd failed to binary decode: {0}")]
-    CmdDeserializeFailure(deku::DekuError),
+    /// Failed to re-attach USB kernel driver (linux only).
+    #[cfg(target_os = "linux")]
+    #[error("Failed to re-attach USB kernel driver for {0}: {1}")]
+    UsbReattachKernelDriverFailure(Target, nusb::Error),
 
-    /// Command is not allowed for target device.
-    #[error("cmd not allowed for target device")]
-    CmdNotAllowedForTarget,
+    /// Failed to read from USB bulk endpoint.
+    #[error("Bulk read failed on {0}: {1}")]
+    UsbReadBulkFailure(Target, nusb::transfer::TransferError),
+
+    /// Read data from USB does not match expected size.
+    #[error("Bulk read did not match expected size on {0}: {1} >= {2}")]
+    UsbReadBulkMismatch(Target, usize, usize),
+
+    /// Failed to write to USB bulk endpoint.
+    #[error("Bulk write failed on {0}: {1}")]
+    UsbWriteBulkFailure(Target, nusb::transfer::TransferError),
+
+    /// Written data to USB does not match expected size.
+    #[error("Bulk write did not match expected size on {0}: {1} != {2}")]
+    UsbWriteBulkMismatch(Target, usize, usize),
+
+    /// No PICOBOOT devices found.
+    #[error("No PICOBOOT devices found")]
+    PicobootNoDevicesFound,
+
+    /// PICOBOOT get command status from device failed.
+    #[error("PICOBOOT get command status from {0} failed: {1}")]
+    PicobootGetCommandStatusFailure(Target, nusb::transfer::TransferError),
+
+    /// Failed to reset PICOBOOT interface.
+    #[error("Failed to reset PICOBOOT interface: {0}")]
+    PicobootResetInterfaceFailure(Target, nusb::transfer::TransferError),
+
+    /// PICOBOOT interface not found on a device purporting to be an RP2040 or
+    /// RP2350 in BOOTSEL mode.
+    #[error("PICOBOOT interface not found on {0}")]
+    PicobootInterfaceNotFound(Target),
+
+    /// Command is not allowed for this PICOBOOT target.
+    #[error("PICOBOOT command not allowed for {0}: {1}")]
+    PicobootCmdNotAllowedForTarget(Target, PicobootCmdId),
 
     /// Erase command address invalid.
-    #[error("erase address invalid")]
-    EraseInvalidAddr,
+    #[error("Erase address invalid on {0}: {1:#X}")]
+    PicobootEraseInvalidAddr(Target, u32),
+
     /// Erase command size invalid.
-    #[error("erase size invalid")]
-    EraseInvalidSize,
+    #[error("Erase size invalid on {0}: {1:#X}")]
+    PicobootEraseInvalidSize(Target, u32),
 
     /// Write command address invalid.
-    #[error("write address invalid")]
-    WriteInvalidAddr,
+    #[error("Write address invalid on {0}: {1:#X}")]
+    PicobootWriteInvalidAddr(Target, u32),
+
+    /// Failed to serialize PICOBOOT command for device.  Most likely an
+    /// internal error.
+    #[error("PICOBOOT command failed to binary encode for {0}: {1}")]
+    PicobootCmdSerializeFailure(Target, deku::DekuError),
+
+    /// Failed to deserialize PICOBOOT command from device.  Suggests the
+    /// device sent malformed data.
+    #[error("PICOBOOT command failed to binary decode    {0}: {1}")]
+    PicobootCmdDeserializeFailure(Target, deku::DekuError),
 
     /// Invalid duration
-    #[error("invalid duration")]
-    InvalidDuration,
+    #[error("Invalid duration on {0}: {1:?}")]
+    PicobootInvalidDuration(Target, std::time::Duration),
 
-    /// Missing buffer for data transfer command.
-    #[error("missing buffer for data transfer command")]
-    CmdDataTransferBufferMissing,
+    /// Missing data for a command that transmits data.
+    #[error("Missing buffer for data transfer command on {0}: {1}")]
+    PicobootCmdDataMissing(Target, PicobootCmdId),
 }

@@ -23,7 +23,7 @@ async fn run() -> Result<(), Error> {
 
     if devices.is_empty() {
         println!("No PICOBOOT devices found");
-        return Ok(())
+        return Ok(());
     } else if devices.len() == 1 {
         println!("Found 1 PICOBOOT device:");
     } else {
@@ -31,17 +31,15 @@ async fn run() -> Result<(), Error> {
     }
 
     for device_info in devices.iter() {
-        let product = device_info
-            .product_string()
-            .unwrap_or("unknown");
-        let serial = device_info
-            .serial_number()
-            .unwrap_or("unknown");
+        let product = device_info.product_string().unwrap_or("unknown");
+        let serial = device_info.serial_number().unwrap_or("unknown");
         let vid = device_info.vendor_id();
         let pid = device_info.product_id();
         let bus = device_info.bus_id();
         let addr = device_info.device_address();
-        println!("- Product '{product}' Serial '{serial}' VID:PID '{vid:04x}:{pid:04x}' Bus:Address '{bus}:{addr}'");
+        println!(
+            "- Product '{product}' Serial '{serial}' VID:PID '{vid:04x}:{pid:04x}' Bus:Address '{bus}:{addr}'"
+        );
     }
 
     Ok(())

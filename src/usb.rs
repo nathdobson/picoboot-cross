@@ -3,26 +3,21 @@
 // MIT License
 
 use deku::{DekuContainerRead, DekuContainerWrite};
-use nusb::{Device, DeviceInfo, Endpoint, Interface,};
-use nusb::descriptors::TransferType;
-use nusb::transfer::{
-    Bulk, Buffer, ControlIn, ControlOut, Direction as NusbDirection, In, Out,
-    Recipient,
-};
-use nusb::transfer::ControlType::Vendor;
-#[cfg(target_os = "linux")]
-use nusb::ErrorKind as NusbErrorKind;
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
+#[cfg(target_os = "linux")]
+use nusb::ErrorKind as NusbErrorKind;
+use nusb::descriptors::TransferType;
+use nusb::transfer::ControlType::Vendor;
+use nusb::transfer::{
+    Buffer, Bulk, ControlIn, ControlOut, Direction as NusbDirection, In, Out, Recipient,
+};
+use nusb::{Device, DeviceInfo, Endpoint, Interface};
 use std::time::Duration;
 
-
-use crate::{Access, Direction, Error as PicobootError, Target};
 use crate::cmd::{PicobootCmd, PicobootCmdId, PicobootStatusCmd};
-use crate::cmd::{
-    REQUEST_GET_COMMAND_STATUS, REQUEST_RESET, RESPONSE_GET_COMMAND_STATUS_SIZE
-};
-
+use crate::cmd::{REQUEST_GET_COMMAND_STATUS, REQUEST_RESET, RESPONSE_GET_COMMAND_STATUS_SIZE};
+use crate::{Access, Direction, Error as PicobootError, Target};
 
 // see https://github.com/raspberrypi/picotool/blob/master/main.cpp#L4173
 // for loading firmware over a connection
@@ -39,9 +34,8 @@ const DEFAULT_ENDPOINT_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_COMMAND_STATUS_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_RESET_TIMEOUT: Duration = Duration::from_secs(1);
 
-
 /// USB timeouts for PICOBOOT operations
-/// 
+///
 /// Note that on Windows, the current version of `nusb` does not honour these
 /// timeouts, and instead uses the default WinUSB timeout of 5s.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,9 +64,9 @@ impl Default for Timeouts {
 ///
 /// This object is used to send commands to a connected PICOBOOT capable
 /// device.
-/// 
+///
 /// ## Example
-/// 
+///
 /// ```rust,no_run
 /// # use picoboot::{Picoboot, Error};
 /// # #[tokio::main]
@@ -114,7 +108,7 @@ impl Connection {
     ///
     /// This may be called after opening a brand new connection to ensure a
     /// consistent starting state, or to reset a stalled connection.
-    /// 
+    ///
     /// Note that this resets any exclusive access, re-enabling the USB mass
     /// storage device if it was ejects due to exclusivity.
     ///
@@ -123,19 +117,27 @@ impl Connection {
     pub async fn reset_interface(&mut self) -> Result<()> {
         // Get the IN endpoint
         trace!("Getting bulk IN endpoint");
-        let mut in_ep: Endpoint<Bulk, In> = self.interface.endpoint(self.in_ep)
+        let mut in_ep: Endpoint<Bulk, In> = self
+            .interface
+            .endpoint(self.in_ep)
             .inspect_err(|e| debug!("Failed to get bulk IN endpoint: {e}"))
             .map_err(|e| PicobootError::UsbInEndpointClaimFailure(self.target.clone(), e))?;
-        in_ep.clear_halt().await
+        in_ep
+            .clear_halt()
+            .await
             .inspect_err(|e| debug!("Failed to clear halt on bulk IN endpoint: {e}"))
             .map_err(|e| PicobootError::UsbClearInEndpointHaltFailure(self.target.clone(), e))?;
 
         // Get the OUT endpoint
         trace!("Getting bulk OUT endpoint");
-        let mut out_ep: Endpoint<Bulk, Out> = self.interface.endpoint(self.out_ep)
+        let mut out_ep: Endpoint<Bulk, Out> = self
+            .interface
+            .endpoint(self.out_ep)
             .inspect_err(|e| debug!("Failed to get bulk OUT endpoint: {e}"))
             .map_err(|e| PicobootError::UsbOutEndpointClaimFailure(self.target.clone(), e))?;
-        out_ep.clear_halt().await
+        out_ep
+            .clear_halt()
+            .await
             .inspect_err(|e| debug!("Failed to clear halt on bulk OUT endpoint: {e}"))
             .map_err(|e| PicobootError::UsbClearOutEndpointHaltFailure(self.target.clone(), e))?;
 
@@ -145,13 +147,15 @@ impl Connection {
             Ok(status) => {
                 if status.is_ok() {
                     trace!("Device status OK - not sending reset control request");
-                    return Ok(())
+                    return Ok(());
                 } else {
                     debug!("Device status not OK - sending reset control request");
                 }
-            },
+            }
             Err(e) => {
-                info!("Failed to get device status before reset - sending reset control request: {e}");
+                info!(
+                    "Failed to get device status before reset - sending reset control request: {e}"
+                );
             }
         }
 
@@ -168,7 +172,7 @@ impl Connection {
         };
         {
             #[cfg(target_os = "windows")]
-            {   
+            {
                 self.interface.control_out(control_out, timeout).await
             }
             #[cfg(not(target_os = "windows"))]
@@ -181,10 +185,10 @@ impl Connection {
     }
 
     /// Sends a low-level command to the PICOBOOT device.
-    /// 
+    ///
     /// Depending on the command, the buffer argument may be used to send data
     /// to the device.
-    /// 
+    ///
     /// Depending on the command, the returned Vec may contain data from the
     /// device.
     ///
@@ -195,7 +199,8 @@ impl Connection {
         let cmd = cmd.set_token(self.cmd_token());
 
         // Construct the write command
-        let cmd_bytes = cmd.to_bytes()
+        let cmd_bytes = cmd
+            .to_bytes()
             .inspect_err(|e| debug!("Failed to serialize command: {e}"))
             .map_err(|e| Error::PicobootCmdSerializeFailure(self.target.clone(), e))?;
 
@@ -212,10 +217,7 @@ impl Connection {
                 Direction::Out => {
                     if buf.is_none() {
                         debug!("No buffer provided for OUT data transfer command");
-                        return Err(Error::PicobootCmdDataMissing(
-                            self.target.clone(),
-                            cmd.id(),
-                        ));
+                        return Err(Error::PicobootCmdDataMissing(self.target.clone(), cmd.id()));
                     }
                     let buf = buf.unwrap();
                     let _written = self.bulk_write(buf, true)?;
@@ -249,31 +251,33 @@ impl Connection {
     }
 
     /// Performs a simple reboot of the device.
-    /// 
+    ///
     /// Args:
     /// - `delay` - Time to start the device after.  Must fit into a u32
     ///   milliseconds.
-    /// 
+    ///
     /// For a target [`Target::Custom`] this command is not supported - use
     /// [`Self::reboot_rp2040`] or [`Self::reboot_rp2350`] instead.
-    /// 
+    ///
     /// Returns:
     /// - `Ok(())` - If reboot command is successfully sent.
     pub async fn reboot(&mut self, delay: Duration) -> Result<()> {
         match self.target {
-            Target::Rp2040 => self.reboot_rp2040(
-                0,
-                self.target.default_stack_pointer().unwrap(),
-                delay
-            ).await,
+            Target::Rp2040 => {
+                self.reboot_rp2040(0, self.target.default_stack_pointer().unwrap(), delay)
+                    .await
+            }
             Target::Rp2350 => self.reboot_rp2350(0, 0, 0, delay).await,
-            Target::Custom { .. } => Err(Error::PicobootCmdNotAllowedForTarget(self.target.clone(), PicobootCmdId::Reboot)),
+            Target::Custom { .. } => Err(Error::PicobootCmdNotAllowedForTarget(
+                self.target.clone(),
+                PicobootCmdId::Reboot,
+            )),
         }
     }
 
     /// Reboots the device with a specified program counter, stack pointer, and
     /// delay.
-    /// 
+    ///
     /// Note, reboot is not supported on the RP2350.
     ///
     /// - `program_counter` - Program counter to start the device with. Use `0` for a standard flash boot, or a RAM address to start executing at.
@@ -283,26 +287,36 @@ impl Connection {
     ///
     /// Returns:
     /// - `Ok(())` - If reboot command is successfully sent.
-    pub async fn reboot_rp2040(&mut self, program_counter: u32, stack_pointer: u32, delay: Duration) -> Result<()> {
-        let delay_ms: u32 = delay.as_millis()
+    pub async fn reboot_rp2040(
+        &mut self,
+        program_counter: u32,
+        stack_pointer: u32,
+        delay: Duration,
+    ) -> Result<()> {
+        let delay_ms: u32 = delay
+            .as_millis()
             .try_into()
             .map_err(|_| Error::PicobootInvalidDuration(self.target.clone(), delay))?;
 
         if self.target == Target::Rp2350 {
-            return Err(Error::PicobootCmdNotAllowedForTarget(self.target.clone(), PicobootCmdId::Reboot));
+            return Err(Error::PicobootCmdNotAllowedForTarget(
+                self.target.clone(),
+                PicobootCmdId::Reboot,
+            ));
         }
 
-        let _ = self.send_cmd(PicobootCmd::reboot(
-            program_counter,
-            stack_pointer,
-            delay_ms
-        ), None).await?;
+        let _ = self
+            .send_cmd(
+                PicobootCmd::reboot(program_counter, stack_pointer, delay_ms),
+                None,
+            )
+            .await?;
 
         Ok(())
     }
 
     /// Reboots the device out of BOOTSEL mode into normal operation
-    /// 
+    ///
     /// Note, not supported on the RP2040.
     ///
     /// Args:
@@ -311,28 +325,40 @@ impl Connection {
     /// - `p1` - Reboot parameter 1.
     /// - `delay` - Time to start the device after.  Must fit into a u32
     ///   milliseconds.
-    /// 
+    ///
     /// See the RP2350 datasheet, section 5.4.8.24. reboot for details on the
     /// flags and parameters.  For a standard boot, set them all to 0.
     ///
     /// Returns:
     /// - `Ok(())` - If reboot command is successfully sent.
-    pub async fn reboot_rp2350(&mut self, flags: u32, p0: u32, p1: u32, delay: Duration) -> Result<()> {
-        let delay_ms: u32 = delay.as_millis()
+    pub async fn reboot_rp2350(
+        &mut self,
+        flags: u32,
+        p0: u32,
+        p1: u32,
+        delay: Duration,
+    ) -> Result<()> {
+        let delay_ms: u32 = delay
+            .as_millis()
             .try_into()
             .map_err(|_| Error::PicobootInvalidDuration(self.target.clone(), delay))?;
 
         if self.target == Target::Rp2040 {
-            return Err(Error::PicobootCmdNotAllowedForTarget(self.target.clone(), PicobootCmdId::Reboot2));
+            return Err(Error::PicobootCmdNotAllowedForTarget(
+                self.target.clone(),
+                PicobootCmdId::Reboot2,
+            ));
         }
 
-        let _ = self.send_cmd(PicobootCmd::reboot2(flags, p0, p1, delay_ms), None).await?;
+        let _ = self
+            .send_cmd(PicobootCmd::reboot2(flags, p0, p1, delay_ms), None)
+            .await?;
 
         Ok(())
     }
 
     /// Erases the flash memory of the device from the start
-    /// 
+    ///
     /// Args:
     /// - `size` - Number of bytes to erase. Will be rounded up to the nearest
     ///   multiple of [`Target::flash_sector_size`].
@@ -345,7 +371,7 @@ impl Connection {
 
         let sector_size = self.target.flash_sector_size();
         let size = size.div_ceil(sector_size) * sector_size;
-        
+
         trace!("Erasing flash size rounded to sector size: {size:#X} bytes");
         self.flash_erase(self.target.flash_start(), size).await
     }
@@ -365,17 +391,19 @@ impl Connection {
             return Err(Error::PicobootEraseInvalidSize(self.target.clone(), size));
         }
 
-        let _ = self.send_cmd(PicobootCmd::flash_erase(addr, size), None).await?;
+        let _ = self
+            .send_cmd(PicobootCmd::flash_erase(addr, size), None)
+            .await?;
 
         Ok(())
     }
 
     /// Writes a buffer to the start of the flash memory of the device.
-    /// 
+    ///
     /// Args:
     /// - `buf` - Buffer of data to write to flash. Should be a multiple of
     ///   [`Target::flash_page_size`]. If not, the remainder of the final page is zero-filled.
-    /// 
+    ///
     /// Returns:
     /// - `Ok(())` - If write command is successfully sent.
     pub async fn flash_write_start(&mut self, buf: &[u8]) -> Result<()> {
@@ -393,11 +421,24 @@ impl Connection {
     /// Returns:
     /// - `Ok(())` - If write command is successfully sent.
     pub async fn flash_write(&mut self, addr: u32, buf: &[u8]) -> Result<()> {
-        if !addr.is_multiple_of(self.target.flash_page_size()) {
+        let page_size = self.target.flash_page_size();
+
+        if !addr.is_multiple_of(page_size) {
             return Err(Error::PicobootWriteInvalidAddr(self.target.clone(), addr));
         }
 
-        let _ = self.send_cmd(PicobootCmd::flash_write(addr, buf.len() as u32), Some(buf)).await?;
+        let page_size = page_size as usize;
+        let mut offset = 0;
+
+        while offset < buf.len() {
+            let chunk = &buf[offset..std::cmp::min(offset + page_size, buf.len())];
+            let chunk_addr = addr + offset as u32;
+            let _ = self.send_cmd(
+                PicobootCmd::flash_write(chunk_addr, chunk.len() as u32),
+                Some(chunk)
+            ).await?;
+            offset += page_size;
+        }
 
         Ok(())
     }
@@ -415,11 +456,12 @@ impl Connection {
 
     /// Reads from flash memory of the device.
     pub async fn flash_read(&mut self, addr: u32, size: u32) -> Result<Vec<u8>> {
-        self.send_cmd(PicobootCmd::flash_read(addr, size), None).await
+        self.send_cmd(PicobootCmd::flash_read(addr, size), None)
+            .await
     }
 
     /// Enter Flash XIP (execute-in-place) mode.
-    /// 
+    ///
     /// Only functional on RP2040 devices - is a no-op on RP2350.
     ///
     /// Returns:
@@ -431,7 +473,7 @@ impl Connection {
     }
 
     /// Exits Flash XIP (execute-in-place) mode.
-    /// 
+    ///
     /// Only functional on RP2040 devices - is a no-op on RP2350.
     ///
     /// Returns:
@@ -459,14 +501,18 @@ impl Connection {
         in_ep_max_packet_size: usize,
         timeouts: Timeouts,
     ) -> Result<Self> {
-        let mut device = device_info.open().await
+        let mut device = device_info
+            .open()
+            .await
             .map_err(|e| PicobootError::UsbOpenError(target.clone(), e))?;
 
         // Detach kernel driver BEFORE claiming interface
         let kernel_driver_detached = Self::detach_kernel_driver(&mut device, &target, if_num)?;
 
         // Claim the interface
-        let interface = device.claim_interface(if_num).await
+        let interface = device
+            .claim_interface(if_num)
+            .await
             .map_err(|e| PicobootError::UsbClaimInterfaceFailure(target.clone(), e))?;
 
         Ok(Self {
@@ -482,11 +528,7 @@ impl Connection {
         })
     }
 
-    fn detach_kernel_driver(
-        device: &mut Device,
-        target: &Target,
-        if_num: u8,
-    ) -> Result<bool> {
+    fn detach_kernel_driver(device: &mut Device, target: &Target, if_num: u8) -> Result<bool> {
         #[cfg(target_os = "linux")]
         {
             let kernel_driver_detached = match device.detach_kernel_driver(if_num) {
@@ -494,21 +536,27 @@ impl Connection {
                     trace!("Detached kernel driver for interface {if_num}");
                     true
                 }
-                Err(e) => {
-                    match &e.kind() {
-                        NusbErrorKind::Other => {
-                            if e.os_error() == Some(rustix::io::Errno::NODATA.raw_os_error() as u32) {
-                                trace!("Kernel driver not active for interface {if_num}, not detaching");
-                                false
-                            } else {
-                                return Err(PicobootError::UsbDetachKernelDriverFailure(target.clone(), e));
-                            }
-                        }
-                        _ => {
-                            return Err(PicobootError::UsbDetachKernelDriverFailure(target.clone(), e));
+                Err(e) => match &e.kind() {
+                    NusbErrorKind::Other => {
+                        if e.os_error() == Some(rustix::io::Errno::NODATA.raw_os_error() as u32) {
+                            trace!(
+                                "Kernel driver not active for interface {if_num}, not detaching"
+                            );
+                            false
+                        } else {
+                            return Err(PicobootError::UsbDetachKernelDriverFailure(
+                                target.clone(),
+                                e,
+                            ));
                         }
                     }
-                }
+                    _ => {
+                        return Err(PicobootError::UsbDetachKernelDriverFailure(
+                            target.clone(),
+                            e,
+                        ));
+                    }
+                },
             };
             Ok(kernel_driver_detached)
         }
@@ -531,15 +579,18 @@ impl Connection {
                     trace!("Reattached kernel driver for interface {if_num}");
                     Ok(())
                 }
-                Err(e) => {
-                    Err(PicobootError::UsbReattachKernelDriverFailure(self.target.clone(), e))
-                }
+                Err(e) => Err(PicobootError::UsbReattachKernelDriverFailure(
+                    self.target.clone(),
+                    e,
+                )),
             }
         }
         #[cfg(not(target_os = "linux"))]
         {
             // On non-Linux platforms, assume no kernel driver to re-attach
-            unreachable!("Internal error - kernel driver was not detached in the first place - please report this as a bug")
+            unreachable!(
+                "Internal error - kernel driver was not detached in the first place - please report this as a bug"
+            )
         }
     }
 
@@ -553,25 +604,32 @@ impl Connection {
         let timeout = self.timeouts.endpoint;
 
         // Get the endpoint
-        let mut ep: Endpoint<Bulk, In> = self.interface.endpoint(self.in_ep)
+        let mut ep: Endpoint<Bulk, In> = self
+            .interface
+            .endpoint(self.in_ep)
             .inspect_err(|e| debug!("Failed to get bulk IN endpoint: {e}"))
             .map_err(|e| PicobootError::UsbInEndpointClaimFailure(self.target.clone(), e))?;
 
         // Perform the transfer
         let completion = ep.transfer_blocking(buf, timeout);
         let actual_len = completion.actual_len;
-        let mut data = completion.into_result()
+        let mut data = completion
+            .into_result()
             .map(|buffer| buffer.into_vec())
             .inspect_err(|e| debug!("Failed to read bulk data: {e}"))
             .map_err(|e| PicobootError::UsbReadBulkFailure(self.target.clone(), e))?;
 
         if check && buf_size < actual_len {
             debug!("Bulk read size mismatch: expected {buf_size}, got {actual_len}");
-            return Err(PicobootError::UsbReadBulkMismatch(self.target.clone(), buf_size, actual_len));
+            return Err(PicobootError::UsbReadBulkMismatch(
+                self.target.clone(),
+                buf_size,
+                actual_len,
+            ));
         }
 
         data.truncate(buf_size);
-        
+
         Ok(data)
     }
 
@@ -580,22 +638,32 @@ impl Connection {
         let timeout = self.timeouts.endpoint;
 
         // Get the endpoint
-        let mut ep: Endpoint<Bulk, Out> = self.interface.endpoint(self.out_ep)
+        let mut ep: Endpoint<Bulk, Out> = self
+            .interface
+            .endpoint(self.out_ep)
             .inspect_err(|e| debug!("Failed to get bulk OUT endpoint: {e}"))
             .map_err(|e| PicobootError::UsbOutEndpointClaimFailure(self.target.clone(), e))?;
 
         // Perform the transfer
         let completion = ep.transfer_blocking(buf, timeout);
         let actual_len = completion.actual_len;
-        completion.into_result()
+        completion
+            .into_result()
             .inspect_err(|e| debug!("Failed to write bulk data: {e}"))
             .map_err(|e| PicobootError::UsbWriteBulkFailure(self.target.clone(), e))?;
-        
+
         if check && actual_len != data.len() {
-            debug!("Bulk write size mismatch: expected {}, wrote {actual_len}", data.len());
-            return Err(PicobootError::UsbWriteBulkMismatch(self.target.clone(), data.len(), actual_len));
+            debug!(
+                "Bulk write size mismatch: expected {}, wrote {actual_len}",
+                data.len()
+            );
+            return Err(PicobootError::UsbWriteBulkMismatch(
+                self.target.clone(),
+                data.len(),
+                actual_len,
+            ));
         }
-        
+
         Ok(actual_len)
     }
 
@@ -646,14 +714,14 @@ impl Connection {
 }
 
 /// Represents an attached PICOBOOT capable device
-/// 
+///
 /// This object is used to discover and manage connections to PICOBOOT
 /// devices over USB.
-/// 
+///
 /// ## Example
-/// 
+///
 /// Create a new Picoboot instance and connect to the first discovered device:
-/// 
+///
 /// ```rust,no_run
 /// use picoboot::{Picoboot, Error};
 ///
@@ -701,13 +769,13 @@ pub struct Picoboot {
 /// - Timeout settings
 impl PartialEq for Picoboot {
     fn eq(&self, other: &Self) -> bool {
-        self.target == other.target &&
-        self.device_info.vendor_id() == other.device_info.vendor_id() &&
-        self.device_info.product_id() == other.device_info.product_id() &&
-        self.device_info.bus_id() == other.device_info.bus_id() &&
-        self.device_info.device_address() == other.device_info.device_address() &&
-        self.device_info.serial_number() == other.device_info.serial_number() &&
-        self.timeouts == other.timeouts
+        self.target == other.target
+            && self.device_info.vendor_id() == other.device_info.vendor_id()
+            && self.device_info.product_id() == other.device_info.product_id()
+            && self.device_info.bus_id() == other.device_info.bus_id()
+            && self.device_info.device_address() == other.device_info.device_address()
+            && self.device_info.serial_number() == other.device_info.serial_number()
+            && self.timeouts == other.timeouts
     }
 }
 
@@ -715,24 +783,22 @@ impl Eq for Picoboot {}
 
 impl Picoboot {
     /// Creates a new PICOBOOT object from the specified `nusb` device info.
-    /// 
+    ///
     /// Use this function if you have already discovered a suitable device
     /// using `nusb` directly.
-    /// 
+    ///
     /// Otherwise, see:
     /// - [`Self::from_first`] for automatic device discovery
     /// - [`Self::list_devices`] to list available devices
-    /// 
+    ///
     /// Args:
     /// - `device_info` - An `nusb::DeviceInfo` object representing the
     ///   PICOBOOT capable device.
-    /// 
+    ///
     /// Returns:
     /// - `Ok(Picoboot)` - A new Picoboot instance if the device is compatible
     ///   and successfully queried.
-    pub async fn new(
-        device_info: DeviceInfo,
-    ) -> Result<Self> {
+    pub async fn new(device_info: DeviceInfo) -> Result<Self> {
         // Get the target
         let target = Target::from(&device_info);
 
@@ -757,11 +823,15 @@ impl Picoboot {
         let if_num = interface_num.unwrap();
 
         // Now open the device
-        let device = device_info.open().await
+        let device = device_info
+            .open()
+            .await
             .map_err(|e| PicobootError::UsbOpenError(target.clone(), e))?;
 
         // Now claim the interface
-        let interface = device.claim_interface(if_num).await
+        let interface = device
+            .claim_interface(if_num)
+            .await
             .map_err(|e| PicobootError::UsbClaimInterfaceFailure(target.clone(), e))?;
 
         // Get the interface descriptor
@@ -769,7 +839,9 @@ impl Picoboot {
             Some(d) => d,
             None => {
                 debug!("No interface descriptor found for PICOBOOT interface {if_num} on {target}");
-                return Err(PicobootError::UsbNoActiveInterfaceDescriptor(target.clone()));
+                return Err(PicobootError::UsbNoActiveInterfaceDescriptor(
+                    target.clone(),
+                ));
             }
         };
 
@@ -809,7 +881,7 @@ impl Picoboot {
     }
 
     /// Creates a new PICOBOOT object, ready for use, but not yet connected.
-    /// 
+    ///
     /// Function returns the first device found matching any of the provided
     /// types, or the first discovered RP2040/RP2350, if no targets are listed.
     ///
@@ -817,7 +889,7 @@ impl Picoboot {
     /// - `targets` - An optional slice of [`Target`] values to specify which
     ///   device types to search for. If `None`, standard RP2040 and RP2350
     ///   types will be searched.
-    /// 
+    ///
     /// Returns:
     /// - `Ok(Picoboot)` - A new Picoboot instance if a compatible device is
     ///   found and successfully queried.
@@ -837,32 +909,33 @@ impl Picoboot {
     ///
     /// Either searches for all connected RP2040/RP2350 devices with stock
     /// VID/PID, or, if `targets` is provided, only those types.
-    /// 
+    ///
     /// Args:
     /// - `targets` - An optional slice of [`Target`] values to specify which
-    /// 
+    ///
     /// Returns:
     /// - `Ok(Vec<nusb::DeviceInfo>)` - A vector of detected nusb devices.
     pub async fn list_devices(targets: Option<&[Target]>) -> Result<Vec<DeviceInfo>> {
         // Determine which targets to search for
         let targets = match targets {
             Some(t) => t,
-            None => &[
-                Target::Rp2040,
-                Target::Rp2350,
-            ]
+            None => &[Target::Rp2040, Target::Rp2350],
         };
-        trace!("Searching for PICOBOOT devices with VID/PID matches: {:?}", targets);
+        trace!(
+            "Searching for PICOBOOT devices with VID/PID matches: {:?}",
+            targets
+        );
 
         // Get attached USB devices and filter to PICOBOOT devices
-        let devices = nusb::list_devices().await
+        let devices = nusb::list_devices()
+            .await
             .inspect_err(|e| debug!("Failed to list USB devices: {e}"))
             .map_err(|e| PicobootError::UsbEnumerationError(e))?
             .into_iter()
             .filter(|dev| {
-                targets.iter().any(|t| {
-                    dev.vendor_id() == t.vid() && dev.product_id() == t.pid()
-                })
+                targets
+                    .iter()
+                    .any(|t| dev.vendor_id() == t.vid() && dev.product_id() == t.pid())
             })
             .collect();
 
@@ -870,10 +943,10 @@ impl Picoboot {
     }
 
     /// Establish PICOBOOT connection
-    /// 
+    ///
     /// Called to open a connection to the PICOBOOT device, enabling PICOBOOT
     /// commands to be sent.
-    /// 
+    ///
     /// Returns:
     /// - `Ok(())` - If connection is successfully established.
     pub async fn connect(&mut self) -> Result<&mut Connection> {
@@ -881,15 +954,18 @@ impl Picoboot {
             return Ok(self.connection.as_mut().unwrap());
         }
 
-        self.connection = Some(Connection::new(
-            &self.device_info,
-            self.target.clone(),
-            self.if_num,
-            self.out_ep,
-            self.in_ep,
-            self.in_ep_max_packet_size,
-            self.timeouts.clone(),
-        ).await?);
+        self.connection = Some(
+            Connection::new(
+                &self.device_info,
+                self.target.clone(),
+                self.if_num,
+                self.out_ep,
+                self.in_ep,
+                self.in_ep_max_packet_size,
+                self.timeouts.clone(),
+            )
+            .await?,
+        );
 
         Ok(self.connection.as_mut().unwrap())
     }
@@ -925,18 +1001,22 @@ impl Picoboot {
 
     /// Returns VID/PID of the connected PICOBOOT device
     pub fn info(&self) -> String {
-        format!("{:04X}:{:04X}", self.device_info.vendor_id(), self.device_info.product_id())
+        format!(
+            "{:04X}:{:04X}",
+            self.device_info.vendor_id(),
+            self.device_info.product_id()
+        )
     }
 
     /// Convience function to avoid the need to explicitly connect before
     /// performing a flash read.
-    /// 
+    ///
     /// Useful when performing a single operation.
     ///
     /// Args:
     /// - `addr` - Address to start the read.
     /// - `size` - Number of bytes to read.
-    /// 
+    ///
     /// Returns:
     /// - `Ok(Vec<u8>)` - Buffer of data read from flash.
     pub async fn flash_read(&mut self, addr: u32, size: u32) -> Result<Vec<u8>> {
@@ -973,7 +1053,7 @@ impl Picoboot {
 
     /// Convience function to avoid the need to explicitly connect before
     /// performing a flash write.
-    /// 
+    ///
     /// Useful when performing a single operation.
     ///
     /// Args:
@@ -982,7 +1062,7 @@ impl Picoboot {
     /// - `buf` - Buffer of data to write to flash. Should be a multiple of
     ///   [`Target::flash_page_size`]. If not, the remainder of the final
     /// page is zero-filled.
-    /// 
+    ///
     /// Returns:
     /// - `Ok(())` - If write command is successfully sent.
     pub async fn flash_write(&mut self, addr: u32, buf: &[u8]) -> Result<()> {
@@ -1019,15 +1099,15 @@ impl Picoboot {
 
     /// Convience function to avoid the need to explicitly connect before
     /// performing a flash erase.
-    /// 
+    ///
     /// Useful when performing a single operation.
-    /// 
+    ///
     /// Args:
     /// - `addr` - Address to start the erase. Must be on a multiple of
     ///   [`Target::flash_sector_size`].
     /// - `size` - Number of bytes to erase. Must be a multiple of
     ///   [`Target::flash_sector_size`].
-    /// 
+    ///
     /// Returns:
     /// - `Ok(())` - If erase command is successfully sent.
     pub async fn flash_erase(&mut self, addr: u32, size: u32) -> Result<()> {
@@ -1064,20 +1144,22 @@ impl Picoboot {
 
     /// Convience function to perform a combined flash erase and write, and to
     /// avoid the need to explicitly connect before performing the operation.
-    /// 
+    ///
     /// Useful when performing a single operation.
-    /// 
+    ///
     /// Args:
     /// - `addr` - Address to start the erase and write. Must be on a multiple of
     ///   [`Target::flash_sector_size`] and [`Target::flash_page_size`].
     /// - `buf` - Buffer of data to write to flash. Should be a multiple of
     ///   [`Target::flash_page_size`]. If not, the remainder of the final
     ///   page is zero-filled.
-    /// 
+    ///
     /// Returns:
     /// - `Ok(())` - If erase and write commands are successfully sent.
     pub async fn flash_erase_and_write(&mut self, addr: u32, buf: &[u8]) -> Result<()> {
-        if !addr.is_multiple_of(self.target.flash_sector_size()) || !addr.is_multiple_of(self.target.flash_page_size()) {
+        if !addr.is_multiple_of(self.target.flash_sector_size())
+            || !addr.is_multiple_of(self.target.flash_page_size())
+        {
             return Err(Error::PicobootEraseInvalidAddr(self.target.clone(), addr));
         }
 

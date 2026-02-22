@@ -24,7 +24,7 @@ pub enum PicobootCmdId {
     Reboot = 0x2,
     /// Reboot an RP2350
     Reboot2 = 0xA,
-    /// Erase a region of FLASH.  Must be aligned to sector boundaries and 
+    /// Erase a region of FLASH.  Must be aligned to sector boundaries and
     /// be a multiple of sector size.
     FlashErase = 0x3,
     /// Write to RAM or FLASH.  Does not erase first, and FLASH writes must be

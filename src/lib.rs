@@ -3,24 +3,24 @@
 // MIT License
 
 //! # picoboot
-//! 
+//!
 //! A crate for connecting to and communicating with RP2040/RP2350
 //! microcontrollers using the PICOBOOT USB interface.
-//! 
+//!
 //! ## Getting Started
-//! 
+//!
 //! 1. Use [`Picoboot`] to find a PICOBOOT device.
-//! 
+//!
 //! 2. Use [`Picoboot::connect()`] to connect to the device and get a [`Connection`]
-//! 
+//!
 //! 3. Use the [`Connection`] to interact with the device, such as
 //!    reading/writing/erasing flash memory.
-//! 
+//!
 //! ## Example
-//! 
+//!
 //! ```rust,no_run
 //! use picoboot::{Picoboot, Access, Error};
-//! 
+//!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Error> {
 //!     // Create connection to first RP2040/RP2350 found
@@ -31,22 +31,22 @@
 //!     // exit XIP mode (only necessary on RP2040)
 //!     conn.set_exclusive_access(Access::ExclusiveAndEject).await?;
 //!     conn.exit_xip().await?;
-//! 
+//!
 //!     // Erase first 4096 bytes of flash (1 sector)
 //!     conn.flash_erase_start(4096).await?;
-//! 
+//!
 //!     // Write 256 bytes of data to start of flash (1 page)
 //!     conn.flash_write_start(&[0u8; 256]).await?;
-//! 
+//!
 //!     // Retrieve 256 bytes of data from start of flash
 //!     let data = conn.flash_read_start(256).await?;
 //!
 //!     Ok(())
 //! }
 //! ```
-//! 
+//!
 //! ## Crate Overview
-//! 
+//!
 //! - High level APIs for common operations: reading/writing/erasing flash
 //! - Low level APIs for sending/receiving PICOBOOT commands
 //! - Support for both RP2040 and RP2350 targets
@@ -54,15 +54,15 @@
 //!   programmed)
 //! - Supports `async`/`await` using `tokio` and `smol` runtimes
 //! - Native Rust USB implementation using `nusb` - no `libusb` dependency
-//! 
+//!
 //! ## PICOBOOT Overview
-//! 
+//!
 //! The RP2040/RP2350 provide two mechanisms out of the box for flashing
 //! firmware when in BOOTSEL mode:
 //! - UF2 mass storage device interface - copy UF2 files to the mounted drive
 //! - PICOBOOT USB interface - send commands to the device to read/write/erase
 //!   flash, and other operations
-//! 
+//!
 //! PICOBOOT is more flexible than the UF2 mass storage interface, especially
 //! for programmatic reading and writing of firmware images, as it:
 //! - does not require superuser access to mount/unmount drives
@@ -71,22 +71,22 @@
 //! - gives greater control over the device, including reading back flash
 //!   contents, erasing individual flash sectors, and writing individual flash
 //!   pages, reading RAM, resetting the device, etc
-//! 
+//!
 //! For more details on PICOBOOT, see the RP2040 and RP2350 datasheets.
-//! 
+//!
 //! ## Feature Flags
-//! 
+//!
 //! Used to indicate the desired async runtime for `nusb`.
-//! 
+//!
 //! ```toml
 //! default = ["tokio", "logging"]
 //! tokio = ["nusb/tokio"]
 //! smol = ["nusb/smol"]
 //! logging = ["deku/logging"]
 //! ```
-//! 
+//!
 //! ## Acknowledgement
-//! 
+//!
 //! This crate was based on [`picoboot-rs`](https://crates.io/crates/picoboot-rs) by Hickok-Dickson and
 //! provides:
 //! - additional, simplified APIs
@@ -158,7 +158,7 @@ pub const UF2_FAMILY_ID_MAX: u32 = 0xE48BFF5B;
 
 /// USB Module
 pub mod usb;
-pub use usb::{Picoboot, Connection};
+pub use usb::{Connection, Picoboot};
 
 /// Command Module
 pub mod cmd;
@@ -173,18 +173,15 @@ pub enum Target {
     Rp2350,
     /// Custom target with specified VID/PID.  Used for an RP2040/RP2350 with
     /// non-standard VID/PIDs written via OTP.
-    /// 
+    ///
     /// Some methods do not support custom targets, as they require knowledge
     /// of the target type:
     /// - [`Connection::reboot()`]
-    /// 
+    ///
     /// You can use target specific methods, such as
     /// [`Connection::reboot_rp2040()`] and [`Connection::reboot_rp2350()`]
     /// instead, but they may silently fail if used with the wrong target.
-    Custom {
-        vid: u16,
-        pid: u16,
-    }
+    Custom { vid: u16, pid: u16 },
 }
 
 impl std::fmt::Display for Target {
@@ -296,7 +293,7 @@ pub enum Direction {
 }
 
 /// `picoboot` error type.
-/// 
+///
 /// Errors are broken down into:
 /// - USB errors - originating from the underlying `nusb` crate
 /// - PICOBOOT errors - originating from PICOBOOT device or protocol handling

@@ -1406,7 +1406,9 @@ impl Picoboot {
     ///   milliseconds.
     ///
     /// Note: [`RebootType::Bootsel`] is only supported on RP2350. Returns
-    /// [`Error::PicobootCmdNotAllowedForTarget`] for RP2040 or custom targets.
+    /// [`Error::PicobootCmdNotAllowedForTarget`] for RP2040.  For custom
+    /// targets it is allowed (although care must be taken to ensure the
+    /// target actually supports it).
     ///
     /// Returns:
     /// - `Ok(())` - If reboot command is successfully sent.
@@ -1424,7 +1426,11 @@ impl Picoboot {
                 disable_msd,
                 disable_picoboot,
             } => match &target {
-                Target::Rp2350 => {
+                Target::Rp2040 => Err(Error::PicobootCmdNotAllowedForTarget(
+                    target.clone(),
+                    PicobootCmdId::Reboot2,
+                )),
+                _ => {
                     let mut p0 = 0u32;
                     if disable_msd {
                         p0 |= DISABLE_MSD_INTERFACE;
@@ -1440,10 +1446,6 @@ impl Picoboot {
                     );
                     conn.reboot_rp2350(REBOOT_TYPE_BOOTSEL, p0, p1, delay).await
                 }
-                _ => Err(Error::PicobootCmdNotAllowedForTarget(
-                    target.clone(),
-                    PicobootCmdId::Reboot2,
-                )),
             },
         };
 

@@ -375,11 +375,11 @@ impl PicobootCmd {
 ///
 /// Identical wire format to PicobootCmd but accepts an arbitrary magic value,
 /// enabling extension protocols over the same bulk endpoints.
-/// 
+///
 /// For commands that require Data IN (that is data to be transferred from the
 /// device to the host), the cmd_id should have the MSB (0x80) set, and for
 /// Data OUT commands it should be clear.
-/// 
+///
 /// The caller is responsible for constructing valid args for their extension
 /// protocol using the [`PicobootXCmd`] struct.
 #[derive(DekuRead, DekuWrite, Debug, Clone)]
@@ -397,14 +397,17 @@ pub struct PicobootXCmd {
 impl PicobootXCmd {
     /// Create a new PicobootXCmd with the given magic, cmd_id, cmd_size,
     /// transfer_len and args.
-    /// 
+    ///
     /// These fields should be set according to th specification of the
     /// extension.  For more guidance on these fields, see the RP2040/RP2350
     /// datasheets which define the underlying picoboot protocl.
-    /// 
+    ///
     /// Any magic can be used so long as it's not [`PICOBOOT_MAGIC`].
     pub fn new(magic: u32, cmd_id: u8, cmd_size: u8, transfer_len: u32, args: [u8; 16]) -> Self {
-        assert!(magic != PICOBOOT_MAGIC, "magic value cannot be the same as PICOBOOT_MAGIC");
+        assert!(
+            magic != PICOBOOT_MAGIC,
+            "magic value cannot be the same as PICOBOOT_MAGIC"
+        );
         PicobootXCmd {
             magic,
             token: 0,

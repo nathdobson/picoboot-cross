@@ -923,7 +923,7 @@ impl Picoboot {
     pub async fn new(device_info: DeviceInfo) -> Result<Self> {
         let target = Target::from(&device_info);
 
-        // Now open the device
+        // First, open the device
         let device = device_info
             .open()
             .await
@@ -935,55 +935,52 @@ impl Picoboot {
         let mut in_ep_max_packet_size = 0;
         let mut out_ep = None;
 
-        for interface_info in device_info.interfaces() {
-            trace!("Checking {target} interface {interface_info:?} for PICOBOOT class/subclass");
-            let class = interface_info.class();
-            let subclass = interface_info.subclass();
-            if class != PICOBOOT_USB_CLASS || subclass != PICOBOOT_USB_SUBCLASS {
-                continue;
-            }
-            let num = interface_info.interface_number();
-            trace!("Found PICOBOOT interface {num} on {target}, checking endpoints");
+        // Check the device for an interface that matches the PICOBOOT
+        // class/subclass _and_ has bulk IN and OUT endpoints.  That matches
+        // an RP2040/RP2350 in BOOTSEL mode, but also custom targets like One
+        // ROM.
+        'outer: for config in device.configurations() {
+            for iface in config.interfaces() {
+                for interface_info in iface.alt_settings() {
+                    trace!("Checking {target} interface {} for PICOBOOT class/subclass", interface_info.interface_number());
+                    if interface_info.class() != PICOBOOT_USB_CLASS
+                        || interface_info.subclass() != PICOBOOT_USB_SUBCLASS
+                    {
+                        trace!("Interface {} class/subclass mismatch, skipping", interface_info.interface_number());
+                        continue;
+                    }
+                    let num = interface_info.interface_number();
+                    trace!("Found PICOBOOT interface {num} on {target}, checking endpoints");
 
-            let interface = device
-                .claim_interface(num)
-                .await
-                .map_err(|e| PicobootError::UsbClaimInterfaceFailure(target.clone(), e))?;
+                    let mut found_in = None;
+                    let mut found_in_mps = 0;
+                    let mut found_out = None;
+                    for endpoint in interface_info.endpoints() {
+                        match (endpoint.transfer_type(), endpoint.direction()) {
+                            (TransferType::Bulk, NusbDirection::In) => {
+                                found_in = Some(endpoint.address());
+                                found_in_mps = endpoint.max_packet_size();
+                            }
+                            (TransferType::Bulk, NusbDirection::Out) => {
+                                found_out = Some(endpoint.address());
+                            }
+                            _ => {}
+                        }
+                    }
 
-            let desc = match interface.descriptor() {
-                Some(d) => d,
-                None => {
-                    debug!(
-                        "No interface descriptor found for PICOBOOT interface {num} on {target}"
+                    if found_in.is_some() && found_out.is_some() {
+                        if_num = Some(num);
+                        in_ep = found_in;
+                        in_ep_max_packet_size = found_in_mps;
+                        out_ep = found_out;
+                        debug!("Found PICOBOOT interface {num} on {target} with bulk IN/OUT endpoints");
+                        break 'outer;
+                    }
+                    trace!(
+                        "PICOBOOT interface {num} on {target} has no bulk IN/OUT endpoints, continuing"
                     );
-                    continue;
-                }
-            };
-
-            let mut found_in = None;
-            let mut found_in_mps = 0;
-            let mut found_out = None;
-            for endpoint in desc.endpoints() {
-                match (endpoint.transfer_type(), endpoint.direction()) {
-                    (TransferType::Bulk, NusbDirection::In) => {
-                        found_in = Some(endpoint.address());
-                        found_in_mps = endpoint.max_packet_size();
-                    }
-                    (TransferType::Bulk, NusbDirection::Out) => {
-                        found_out = Some(endpoint.address());
-                    }
-                    _ => {}
                 }
             }
-
-            if found_in.is_some() && found_out.is_some() {
-                if_num = Some(num);
-                in_ep = found_in;
-                in_ep_max_packet_size = found_in_mps;
-                out_ep = found_out;
-                break;
-            }
-            debug!("PICOBOOT interface {num} on {target} has no bulk IN/OUT endpoints, continuing");
         }
 
         if if_num.is_none() {

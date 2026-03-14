@@ -2,6 +2,8 @@
 
 A crate for connecting to and communicating with RP2040/RP2350 microcontrollers using the PICOBOOT USB interface.
 
+picoboot-rs now supports the [picobootx](https://github.com/piersfinlayson/picobootx) picoboot extension library, which is a device side picoboot implementation that allows custom commands to be added to the picoboot protocol.
+
 ## Getting Started
 
 1. Use `Picoboot` to find a PICOBOOT device.

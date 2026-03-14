@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Piers Finlayson <piers@piers.rocks>
+// Copyright (C) 2026 Piers Finlayson <piers@piers.rocks>
 //
 // MIT License
 
@@ -162,7 +162,13 @@ pub use usb::{Connection, Picoboot};
 
 /// Command Module
 pub mod cmd;
-pub use cmd::{PicobootCmd, PicobootCmdId};
+pub use cmd::{PicobootCmd, PicobootCmdId, PicobootXCmd};
+
+/// Reader Module
+#[cfg(feature = "reader")]
+pub mod reader;
+#[cfg(feature = "reader")]
+pub use reader::PicobootReader as Reader;
 
 /// Target type for PicobootConnection
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -292,6 +298,18 @@ pub enum Direction {
     Out,
 }
 
+/// Reboot type for [`Picoboot::reboot`]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RebootType {
+    /// Normal reboot - supported on RP2040 and RP2350
+    Normal,
+    /// Reboot into BOOTSEL mode - RP2350 only
+    Bootsel {
+        disable_msd: bool,
+        disable_picoboot: bool,
+    },
+}
+
 /// `picoboot` error type.
 ///
 /// Errors are broken down into:
@@ -394,6 +412,14 @@ pub enum Error {
     #[error("Write address invalid on {0}: {1:#X}")]
     PicobootWriteInvalidAddr(Target, u32),
 
+    /// Read command address invalid.
+    #[error("Read address invalid on {0}: {1:#X}")]
+    PicobootReadInvalidAddr(Target, u32),
+
+    /// Read size invalid.
+    #[error("Read size invalid on {0}: {1:#X}")]
+    PicobootReadInvalidSize(Target, u32),
+
     /// Failed to serialize PICOBOOT command for device.  Most likely an
     /// internal error.
     #[error("PICOBOOT command failed to binary encode for {0}: {1}")]
@@ -411,4 +437,8 @@ pub enum Error {
     /// Missing data for a command that transmits data.
     #[error("Missing buffer for data transfer command on {0}: {1}")]
     PicobootCmdDataMissing(Target, PicobootCmdId),
+
+    /// Missing data for a picobootx command that transmits data.
+    #[error("Missing buffer for data transfer picobootx command on {0}: {1}")]
+    PicobootXCmdDataMissing(Target, u8),
 }

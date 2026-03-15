@@ -122,6 +122,23 @@ impl Connection {
     /// Returns:
     /// - `Ok(())` - If interface is successfully reset.
     pub async fn reset_interface(&mut self) -> Result<()> {
+        // Get command status
+        trace!("Getting command status before reset");
+        match self.get_command_status().await {
+            Ok(status) => {
+                if status.is_ok() {
+                    trace!("Device status OK {status:?}");
+                } else {
+                    debug!("Device status not OK {status:?}");
+                }
+            }
+            Err(e) => {
+                info!(
+                    "Failed to get device status before reset - sending reset control request: {e}"
+                );
+            }
+        }
+
         // Get the IN endpoint
         if self.in_ep_stalled {
             info!("Unstall IN endpoint");
@@ -155,23 +172,6 @@ impl Connection {
                 .map_err(|e| {
                     PicobootError::UsbClearOutEndpointHaltFailure(self.target.clone(), e)
                 })?;
-        }
-
-        // Get command status
-        trace!("Getting command status before reset");
-        match self.get_command_status().await {
-            Ok(status) => {
-                if status.is_ok() {
-                    trace!("Device status OK {status:?}");
-                } else {
-                    debug!("Device status not OK {status:?}");
-                }
-            }
-            Err(e) => {
-                info!(
-                    "Failed to get device status before reset - sending reset control request: {e}"
-                );
-            }
         }
 
         // Send reset control request

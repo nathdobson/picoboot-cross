@@ -370,3 +370,98 @@ impl PicobootCmd {
         PicobootCmd::new(PicobootCmdId::ExitXip, 0, 0, [0; 16])
     }
 }
+
+/// Command structure for picobootx extended protocol.
+///
+/// Identical wire format to PicobootCmd but accepts an arbitrary magic value,
+/// enabling extension protocols over the same bulk endpoints.
+///
+/// For commands that require Data IN (that is data to be transferred from the
+/// device to the host), the cmd_id should have the MSB (0x80) set, and for
+/// Data OUT commands it should be clear.
+///
+/// The caller is responsible for constructing valid args for their extension
+/// protocol using the [`PicobootXCmd`] struct.
+#[derive(DekuRead, DekuWrite, Debug, Clone)]
+#[deku(endian = "little")]
+pub struct PicobootXCmd {
+    magic: u32,
+    token: u32,
+    cmd_id: u8,
+    cmd_size: u8,
+    _unused: u16,
+    transfer_len: u32,
+    args: [u8; 16],
+}
+
+impl PicobootXCmd {
+    /// Create a new PicobootXCmd with the given magic, cmd_id, cmd_size,
+    /// transfer_len and args.
+    ///
+    /// These fields should be set according to th specification of the
+    /// extension.  For more guidance on these fields, see the RP2040/RP2350
+    /// datasheets which define the underlying picoboot protocl.
+    ///
+    /// Any magic can be used so long as it's not [`PICOBOOT_MAGIC`].
+    pub fn new(magic: u32, cmd_id: u8, cmd_size: u8, transfer_len: u32, args: [u8; 16]) -> Self {
+        assert!(
+            magic != PICOBOOT_MAGIC,
+            "magic value cannot be the same as PICOBOOT_MAGIC"
+        );
+        PicobootXCmd {
+            magic,
+            token: 0,
+            cmd_id,
+            cmd_size,
+            _unused: 0,
+            transfer_len,
+            args,
+        }
+    }
+
+    pub(crate) fn set_token(mut self, token: u32) -> Self {
+        self.token = token;
+        self
+    }
+
+    /// Returns the magic value of this command.
+    pub fn get_magic(&self) -> u32 {
+        self.magic
+    }
+
+    // Returns the token of this command.
+    pub fn get_cmd_id(&self) -> u8 {
+        self.cmd_id
+    }
+
+    /// Returns the command size of this command.
+    pub fn get_cmd_size(&self) -> u8 {
+        self.cmd_size
+    }
+
+    /// Returns the transfer length of this command.
+    pub fn get_transfer_len(&self) -> usize {
+        self.transfer_len as usize
+    }
+
+    /// Returns the args of this command.
+    pub fn get_args(&self) -> &[u8] {
+        &self.args[..self.cmd_size as usize]
+    }
+
+    /// Returns the direction of this command.
+    pub fn direction(&self) -> Direction {
+        if self.cmd_id & 0x80 != 0 {
+            Direction::In
+        } else {
+            Direction::Out
+        }
+    }
+
+    /// Returns true if this command is a data transfer command (that is, it
+    /// expects data to be transferred over the bulk endpoints), false
+    /// otherwise.
+    pub fn is_data_transfer(&self) -> bool {
+        self.transfer_len != 0
+    }
+}

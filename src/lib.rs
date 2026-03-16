@@ -89,6 +89,8 @@
 //! smol = ["nusb/smol"]
 //! logging = ["deku/logging"]
 //! ```
+//! 
+//! Also `reader` to include the reader airfrog-rpc::io::Reader implementation.
 //!
 //! ## Acknowledgement
 //!

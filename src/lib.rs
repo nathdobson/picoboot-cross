@@ -171,6 +171,8 @@ pub use usb::{Connection, Picoboot};
 pub mod cmd;
 pub use cmd::{PicobootCmd, PicobootCmdId, PicobootXCmd};
 
+pub use nusb::Speed;
+
 /// Reader Module
 #[cfg(feature = "reader")]
 pub mod reader;

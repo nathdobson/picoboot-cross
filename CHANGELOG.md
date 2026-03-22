@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.1] - 2026-03-22
+
+Add some informational APIs to Picoboot object - vid(), pid(), etc.
+
 ## [0.2.0]
 
 - Added picobootx support which extends picoboot support with additional command using a different (non RP2040/RP2350) magic.  Works with [picobootx](https://github.com/piersfinlayson/picobootx).

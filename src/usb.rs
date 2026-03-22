@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use crate::cmd::{PicobootCmd, PicobootCmdId, PicobootStatusCmd, PicobootXCmd};
 use crate::cmd::{REQUEST_GET_COMMAND_STATUS, REQUEST_RESET, RESPONSE_GET_COMMAND_STATUS_SIZE};
-use crate::{Access, Direction, Error as PicobootError, RebootType, Target};
+use crate::{Access, Direction, Error as PicobootError, RebootType, Speed, Target};
 
 // see https://github.com/raspberrypi/picotool/blob/master/main.cpp#L4173
 // for loading firmware over a connection
@@ -1515,5 +1515,45 @@ impl Picoboot {
                 Err(e)
             }
         }
+    }
+
+    /// Returns the serial number of the device, if available.
+    pub fn serial_number(&self) -> Option<&str> {
+        self.device_info.serial_number()
+    }
+
+    /// Returns the vendor ID of the device.
+    pub fn vid(&self) -> u16 {
+        self.device_info.vendor_id()
+    }
+
+    /// Returns the product ID of the device.
+    pub fn pid(&self) -> u16 {
+        self.device_info.product_id()
+    }
+
+    /// Returns the device.
+    pub fn device_version(&self) -> u16 {
+        self.device_info.device_version()
+    }
+
+    /// Returns the device's manufacturer string, if available.
+    pub fn manufacturer_string(&self) -> Option<&str> {
+        self.device_info.manufacturer_string()
+    }
+
+    /// Returns the device's product string, if available.
+    pub fn product_string(&self) -> Option<&str> {
+        self.device_info.product_string()
+    }
+
+    /// Returns the USB version supported by the device.
+    pub fn usb_version(&self) -> u16 {
+        self.device_info.usb_version()
+    }
+
+    /// Returns the device's speed, if available.
+    pub fn speed(&self) -> Option<Speed> {
+        self.device_info.speed()
     }
 }

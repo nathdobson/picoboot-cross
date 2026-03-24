@@ -1421,7 +1421,10 @@ impl Picoboot {
         let conn = self.connection.as_mut().unwrap();
         let target = self.target.clone();
         let result = match reboot_type {
-            RebootType::Normal => conn.reboot(delay).await,
+            RebootType::Normal => match &target {
+                Target::Rp2040 => conn.reboot(delay).await,
+                _ => conn.reboot_rp2350(REBOOT_TYPE_NORMAL, 0, 0, delay).await,
+            },
             RebootType::Bootsel {
                 disable_msd,
                 disable_picoboot,

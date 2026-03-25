@@ -6,7 +6,7 @@
 //!
 //! A crate for connecting to and communicating with RP2040/RP2350
 //! microcontrollers using the PICOBOOT USB interface.
-//! 
+//!
 //! Supports custom VID/PID targets and extensions to the PICOBOOT protocol.
 //!
 //! ## Getting Started
@@ -56,7 +56,7 @@
 //!   programmed)
 //! - Supports `async`/`await` using `tokio` and `smol` runtimes
 //! - Native Rust USB implementation using `nusb` - no `libusb` dependency
-//! - Supports extensions to the PICOBOOT protocol using custom magics in 
+//! - Supports extensions to the PICOBOOT protocol using custom magics in
 //!   the header, and the [picobootx](https://github.com/piersfinlayson/picobootx)
 //!   device side implementation.
 //!
@@ -89,7 +89,7 @@
 //! smol = ["nusb/smol"]
 //! logging = ["deku/logging"]
 //! ```
-//! 
+//!
 //! Also `reader` to include the reader airfrog-rpc::io::Reader implementation.
 //!
 //! ## Acknowledgement

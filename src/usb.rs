@@ -942,11 +942,17 @@ impl Picoboot {
         'outer: for config in device.configurations() {
             for iface in config.interfaces() {
                 for interface_info in iface.alt_settings() {
-                    trace!("Checking {target} interface {} for PICOBOOT class/subclass", interface_info.interface_number());
+                    trace!(
+                        "Checking {target} interface {} for PICOBOOT class/subclass",
+                        interface_info.interface_number()
+                    );
                     if interface_info.class() != PICOBOOT_USB_CLASS
                         || interface_info.subclass() != PICOBOOT_USB_SUBCLASS
                     {
-                        trace!("Interface {} class/subclass mismatch, skipping", interface_info.interface_number());
+                        trace!(
+                            "Interface {} class/subclass mismatch, skipping",
+                            interface_info.interface_number()
+                        );
                         continue;
                     }
                     let num = interface_info.interface_number();
@@ -973,7 +979,9 @@ impl Picoboot {
                         in_ep = found_in;
                         in_ep_max_packet_size = found_in_mps;
                         out_ep = found_out;
-                        debug!("Found PICOBOOT interface {num} on {target} with bulk IN/OUT endpoints");
+                        debug!(
+                            "Found PICOBOOT interface {num} on {target} with bulk IN/OUT endpoints"
+                        );
                         break 'outer;
                     }
                     trace!(
@@ -1311,9 +1319,33 @@ impl Picoboot {
             }
         }
 
+        // There appears to be a bug in the RP2350 bootrom stepping where an
+        // EXIT_XIP is required before a flash erase, otherwise the erase
+        // fails silently (returns success, immediately).  See:
+        // https://github.com/raspberrypi/pico-sdk/issues/2878
+        //
+        // EXIT_XIP is always required on RP2040 silicon.
+        trace!("Exit XIP");
+        match conn.exit_xip().await {
+            Ok(()) => {}
+            Err(e) => {
+                if !was_connected {
+                    self.disconnect();
+                }
+                return Err(e);
+            }
+        }
+
         trace!("Erasing flash memory");
         match conn.flash_erase(addr, size).await {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                // Do  not ENTER_XIP again, as other commands are likely to
+                // be performed.  And the device is either in BOOTSEL mode (so
+                // who cares if left in EXIT_XIP mode) or running an
+                // application PICOBOOT stack like picobootx, which handles
+                // XIP itself.
+                Ok(())
+            }
             Err(e) => {
                 // Best effort reset
                 conn.reset_interface().await.ok();

@@ -1,6 +1,10 @@
 # Changelog
 
-## [0.2.2] - 2026-??-?
+## [0.2.3] - 2026-03-25
+
+Work around RP2350A2 stepping bootrom bug wheere EXIT_XIP is required before a flash erase in BOOTSEL mode: https://github.com/raspberrypi/pico-sdk/issues/2878
+
+## [0.2.2] - 2026-03-24
 
 Modify Picoboot::reboot to use Connection::reboot2 for a custom target.
 

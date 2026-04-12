@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use crate::cmd::{PicobootCmd, PicobootCmdId, PicobootStatusCmd, PicobootXCmd};
 use crate::cmd::{REQUEST_GET_COMMAND_STATUS, REQUEST_RESET, RESPONSE_GET_COMMAND_STATUS_SIZE};
-use crate::{Access, Direction, Error as PicobootError, RebootType, Speed, Target};
+use crate::{Access, Direction, Error as PicobootError, RebootType, Target};
 
 // see https://github.com/raspberrypi/picotool/blob/master/main.cpp#L4173
 // for loading firmware over a connection
@@ -186,14 +186,7 @@ impl Connection {
             data: &[0u8; 0],
         };
         {
-            #[cfg(target_os = "windows")]
-            {
-                self.interface.control_out(control_out, timeout).await
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                self.device.control_out(control_out, timeout).await
-            }
+            self.interface.control_out(control_out, timeout).await
         }
         .inspect_err(|e| debug!("Failed to reset PICOBOOT interface: {e}"))
         .map_err(|e| Error::PicobootResetInterfaceFailure(self.target.clone(), e))
@@ -221,14 +214,14 @@ impl Connection {
 
         // Write the command
         trace!("Sending command {cmd:?}");
-        self.bulk_write(cmd_bytes.as_slice(), true)?;
+        self.bulk_write(cmd_bytes.as_slice(), true).await?;
 
         // Do the appropriate read/write if this is a data transfer command
         let mut res = vec![];
         if cmd.is_data_transfer() {
             match cmd.direction() {
                 Direction::In => {
-                    res = self.bulk_read(cmd.get_transfer_len(), true)?;
+                    res = self.bulk_read(cmd.get_transfer_len(), true).await?;
                 }
                 Direction::Out => {
                     if buf.is_none() {
@@ -236,7 +229,7 @@ impl Connection {
                         return Err(Error::PicobootCmdDataMissing(self.target.clone(), cmd.id()));
                     }
                     let buf = buf.unwrap();
-                    let _written = self.bulk_write(buf, true)?;
+                    let _written = self.bulk_write(buf, true).await?;
                 }
             }
         }
@@ -244,10 +237,10 @@ impl Connection {
         // Handle acknowledgement
         match cmd.direction() {
             Direction::In => {
-                self.bulk_write(&[0u8; 1], false)?;
+                self.bulk_write(&[0u8; 1], false).await?;
             }
             Direction::Out => {
-                self.bulk_read(1, false)?;
+                self.bulk_read(1, false).await?;
             }
         }
 
@@ -570,18 +563,9 @@ impl Connection {
         trace!("Issuing GET_COMMAND_STATUS control for interface {if_num}");
 
         // Send control request
-        let buf = {
-            #[cfg(target_os = "windows")]
-            {
-                self.interface.control_in(control, timeout).await
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                self.device.control_in(control, timeout).await
-            }
-        }
-        .inspect_err(|e| debug!("Failed to get command status: {e}"))
-        .map_err(|e| Error::PicobootGetCommandStatusFailure(self.target.clone(), e))?;
+        let buf = { self.interface.control_in(control, timeout).await }
+            .inspect_err(|e| debug!("Failed to get command status: {e}"))
+            .map_err(|e| Error::PicobootGetCommandStatusFailure(self.target.clone(), e))?;
 
         // Deserialize response
         let (_, cmd) = PicobootStatusCmd::from_bytes((&buf, 0))
@@ -609,13 +593,13 @@ impl Connection {
             .map_err(|e| Error::PicobootCmdSerializeFailure(self.target.clone(), e))?;
 
         trace!("Sending picobootx command {cmd:?}");
-        self.bulk_write(cmd_bytes.as_slice(), true)?;
+        self.bulk_write(cmd_bytes.as_slice(), true).await?;
 
         let mut res = vec![];
         if cmd.is_data_transfer() {
             match cmd.direction() {
                 Direction::In => {
-                    res = self.bulk_read(cmd.get_transfer_len(), true)?;
+                    res = self.bulk_read(cmd.get_transfer_len(), true).await?;
                 }
                 Direction::Out => {
                     if buf.is_none() {
@@ -625,17 +609,17 @@ impl Connection {
                             cmd.get_cmd_id(),
                         ));
                     }
-                    self.bulk_write(buf.unwrap(), true)?;
+                    self.bulk_write(buf.unwrap(), true).await?;
                 }
             }
         }
 
         match cmd.direction() {
             Direction::In => {
-                self.bulk_write(&[0u8; 1], false)?;
+                self.bulk_write(&[0u8; 1], false).await?;
             }
             Direction::Out => {
-                self.bulk_read(1, false)?;
+                self.bulk_read(1, false).await?;
             }
         }
 
@@ -749,14 +733,13 @@ impl Connection {
         }
     }
 
-    fn bulk_read(&mut self, buf_size: usize, check: bool) -> Result<Vec<u8>> {
+    async fn bulk_read(&mut self, buf_size: usize, check: bool) -> Result<Vec<u8>> {
         // nusb requires IN transfer sizes to be multiples of max packet size
         // Round up to the nearest multiple
         let max_packet_size = self.in_ep_max_packet_size as usize;
         let transfer_size = ((buf_size + max_packet_size - 1) / max_packet_size) * max_packet_size;
 
         let buf = Buffer::new(transfer_size);
-        let timeout = self.timeouts.endpoint;
 
         // Get the endpoint
         let mut ep: Endpoint<Bulk, In> = self
@@ -766,7 +749,7 @@ impl Connection {
             .map_err(|e| PicobootError::UsbInEndpointClaimFailure(self.target.clone(), e))?;
 
         // Perform the transfer
-        let completion = ep.transfer_blocking(buf, timeout);
+        let completion = ep.transfer(buf).await;
         let actual_len = completion.actual_len;
         let mut data = completion
             .into_result()
@@ -791,9 +774,8 @@ impl Connection {
         Ok(data)
     }
 
-    fn bulk_write(&mut self, data: &[u8], check: bool) -> Result<usize> {
+    async fn bulk_write(&mut self, data: &[u8], check: bool) -> Result<usize> {
         let buf = Buffer::from(data.to_vec());
-        let timeout = self.timeouts.endpoint;
 
         // Get the endpoint
         let mut ep: Endpoint<Bulk, Out> = self
@@ -803,7 +785,7 @@ impl Connection {
             .map_err(|e| PicobootError::UsbOutEndpointClaimFailure(self.target.clone(), e))?;
 
         // Perform the transfer
-        let completion = ep.transfer_blocking(buf, timeout);
+        let completion = ep.transfer(buf).await;
         let actual_len = completion.actual_len;
         completion
             .into_result()
@@ -894,8 +876,6 @@ impl PartialEq for Picoboot {
         self.target == other.target
             && self.device_info.vendor_id() == other.device_info.vendor_id()
             && self.device_info.product_id() == other.device_info.product_id()
-            && self.device_info.bus_id() == other.device_info.bus_id()
-            && self.device_info.device_address() == other.device_info.device_address()
             && self.device_info.serial_number() == other.device_info.serial_number()
             && self.timeouts == other.timeouts
     }
@@ -1567,11 +1547,6 @@ impl Picoboot {
         self.device_info.product_id()
     }
 
-    /// Returns the device.
-    pub fn device_version(&self) -> u16 {
-        self.device_info.device_version()
-    }
-
     /// Returns the device's manufacturer string, if available.
     pub fn manufacturer_string(&self) -> Option<&str> {
         self.device_info.manufacturer_string()
@@ -1585,10 +1560,5 @@ impl Picoboot {
     /// Returns the USB version supported by the device.
     pub fn usb_version(&self) -> u16 {
         self.device_info.usb_version()
-    }
-
-    /// Returns the device's speed, if available.
-    pub fn speed(&self) -> Option<Speed> {
-        self.device_info.speed()
     }
 }

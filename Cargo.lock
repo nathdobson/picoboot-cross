@@ -539,6 +539,7 @@ dependencies = [
  "env_logger",
  "log",
  "nusb",
+ "rustix",
  "serde",
  "thiserror",
  "tokio",

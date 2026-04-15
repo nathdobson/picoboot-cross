@@ -1,5 +1,5 @@
 [package]
-name = "picoboot-cross"
+name = "picoboot"
 version = "0.2.3"
 edition = "2024"
 authors = ["Piers Finlayson <piers@piers.rocks>"]

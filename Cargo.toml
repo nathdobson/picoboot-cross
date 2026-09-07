@@ -9,7 +9,6 @@ homepage = "https://github.com/piersfinlayson/picoboot"
 repository = "https://github.com/piersfinlayson/picoboot.git"
 keywords = ["raspberry-pi", "rp2040", "rp2350", "picoboot", "picotool"]
 categories = ["embedded", "hardware-support"]
-readme = "README.md"
 
 [lib]
 name = "picoboot"
